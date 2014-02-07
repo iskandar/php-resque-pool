@@ -71,51 +71,51 @@ class Pool
     protected function handleSignalQueue()
     {
         switch ($signal = $this->platform->nextSignal()) {
-        case SIGUSR1:
-        case SIGUSR2:
-        case SIGCONT:
-            $this->logger->log("$signal: sending to all workers");
-            $this->signalAllWorkers($signal);
-            break;
-        case SIGHUP:
-            $this->logger->log("HUP: reload config file");
-            $this->config->resetQueues();
-            $this->config->initialize();
-            $this->logger->log('HUP: gracefully shutdown old children (which have old logfiles open)');
-            $this->signalAllWorkers(SIGQUIT);
-            $this->logger->log('HUP: new children will inherit new logfiles');
-            $this->maintainWorkerCount();
-            break;
-        case SIGWINCH:
-            if ($this->config->handleWinch) {
-                $this->logger->log('WINCH: gracefully stopping all workers');
+            case SIGUSR1:
+            case SIGUSR2:
+            case SIGCONT:
+                $this->logger->log("$signal: sending to all workers");
+                $this->signalAllWorkers($signal);
+                break;
+            case SIGHUP:
+                $this->logger->log("HUP: reload config file");
                 $this->config->resetQueues();
+                $this->config->initialize();
+                $this->logger->log('HUP: gracefully shutdown old children (which have old logfiles open)');
+                $this->signalAllWorkers(SIGQUIT);
+                $this->logger->log('HUP: new children will inherit new logfiles');
                 $this->maintainWorkerCount();
-            }
-            break;
-        case SIGQUIT:
-            $this->platform->setQuitOnExitSignal(true);
-            $this->gracefulWorkerShutdownAndWait($signal);
-
-            return true;
-        case SIGINT:
-            $this->gracefulWorkerShutdown($signal);
-
-            return true;
-        case SIGTERM:
-            switch ($this->config->termBehavior) {
-            case "graceful_worker_shutdown_and_wait":
+                break;
+            case SIGWINCH:
+                if ($this->config->handleWinch) {
+                    $this->logger->log('WINCH: gracefully stopping all workers');
+                    $this->config->resetQueues();
+                    $this->maintainWorkerCount();
+                }
+                break;
+            case SIGQUIT:
+                $this->platform->setQuitOnExitSignal(true);
                 $this->gracefulWorkerShutdownAndWait($signal);
-                break;
-            case "graceful_worker_shutdown":
-                $this->gracefulWorkerShutdown($signal);
-                break;
-            default:
-                $this->shutdownEverythingNow($signal);
-                break;
-            }
 
-            return true;
+                return true;
+            case SIGINT:
+                $this->gracefulWorkerShutdown($signal);
+
+                return true;
+            case SIGTERM:
+                switch ($this->config->termBehavior) {
+                    case "graceful_worker_shutdown_and_wait":
+                        $this->gracefulWorkerShutdownAndWait($signal);
+                        break;
+                    case "graceful_worker_shutdown":
+                        $this->gracefulWorkerShutdown($signal);
+                        break;
+                    default:
+                        $this->shutdownEverythingNow($signal);
+                        break;
+                }
+
+                return true;
         }
 
         return false;
@@ -287,11 +287,12 @@ class Pool
         $queues = explode(',', $queues);
         $class = $this->config->workerClass;
         $worker = new $class($queues);
-        if ($this->config->logLevel === Configuration::LOG_VERBOSE) {
-            $worker->logLevel = \Resque_Worker::LOG_VERBOSE;
-        } elseif ($this->config->logLevel === Configuration::LOG_NORMAL) {
-            $worker->logLevel = \Resque_Worker::LOG_NORMAL;
-        }
+
+        // Added by @iskandar to work with chrisboulton/php-resque#610c4dcdbf3e7e5856f694384f3160db94850d1f,
+        // which requires a PSR0-compatible logger to be set on the worker.
+        // @see https://github.com/chrisboulton/php-resque/blob/03d31830d1f8bae8d58aa8dccb9f25a1373359b0/bin/resque#L99
+        $verbose = ($this->config->logLevel === Configuration::LOG_VERBOSE);
+        $worker->setLogger(new \Resque_Log($verbose));
 
         return $worker;
     }
