@@ -145,7 +145,7 @@ class Cli
     {
         $config = new Configuration;
         if ($options['appname']) {
-            $config->appName = $options['appName'];
+            $config->appName = $options['appname'];
         }
         if ($options['environment']) {
             $config->environment = $options['environment'];
